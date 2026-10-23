@@ -7,6 +7,7 @@ from typing import Callable
 import gc
 import json
 import os
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -45,9 +46,16 @@ class Job:
             raise ValueError("Activa la separación de coros para exportarlos.")
 
 
+def data_dir() -> Path:
+    if os.environ.get("LOCALAPPDATA"):
+        return Path(os.environ["LOCALAPPDATA"]) / "StemSeparator"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "StemSeparator"
+    return Path.home() / ".cache" / "StemSeparator"
+
+
 def cache_dir() -> Path:
-    root = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache"))
-    return root / "StemSeparator" / "models"
+    return data_dir() / "models"
 
 
 def ffmpeg() -> str:
@@ -93,14 +101,28 @@ def _make_separator(directory: Path):
     try:
         from audio_separator.separator import Separator
         class FloatWavSeparator(Separator):
-            def load_model(self, *args, **kwargs):
-                result = super().load_model(*args, **kwargs)
-                # The 0.30.x SoundFile writer flattens C-contiguous stereo arrays
-                # and casts normalized floats to integers. Use our lossless WAV
-                # adapter rather than modifying the installed library.
-                self.model_instance.write_audio = lambda path, samples: _write_float_wav(
-                    Path(path), samples, self.sample_rate)
-                return result
+            def setup_torch_device(self, system_info):
+                # Consistent CPU operation on Windows and both Mac architectures.
+                import torch
+                self.torch_device_cpu = torch.device("cpu")
+                self.torch_device = self.torch_device_cpu
+                self.torch_device_mps = None
+                self.onnx_execution_provider = ["CPUExecutionProvider"]
+
+            def separate(self, audio_file_path, custom_output_names=None):
+                # Route by stem label, supporting both the Intel 0.24 API and
+                # 0.30 on ARM/Windows, without changing dependency source files.
+                names = {key.lower(): value for key, value in (custom_output_names or {}).items()}
+                original = self.model_instance.final_process
+                def finish(stem_path, samples, stem_name):
+                    destination = Path(names[stem_name.lower()] + ".wav")
+                    _write_float_wav(destination, samples, self.sample_rate)
+                    return {stem_name: samples}
+                self.model_instance.final_process = finish
+                try:
+                    return super().separate(audio_file_path)
+                finally:
+                    self.model_instance.final_process = original
 
         return FloatWavSeparator(model_file_dir=str(cache_dir()), output_dir=str(directory),
                          output_format="WAV", use_soundfile=True,
@@ -166,7 +188,7 @@ def run(job: Job, status: Callable[[str], None] = print,
             status(f"Exportando {STEMS[key]}…")
             convert(paths[key], result / f"{key}.{job.format}")
         (result / "separation.json").write_text(json.dumps({
-            "app_version": "0.2.0", "input": job.source.name,
+            "app_version": "0.3.0", "input": job.source.name,
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "stems": job.stems, "format": job.format,
             "model": MODEL, "vocal_model": VOCAL_MODEL if job.split_vocals and

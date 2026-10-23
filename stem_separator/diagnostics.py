@@ -49,6 +49,14 @@ def check_models():
             preview = prepare_audio(media, root / (suffix + '-preview.wav'))
             if sf.info(preview).subtype != 'PCM_16':
                 raise RuntimeError('Seekable playback preparation failed')
+            import sys
+            if sys.platform == 'darwin':
+                from .playback import MacPlayer
+                native = MacPlayer._native_player(preview)
+                native.setCurrentTime_(0.01)
+                if native.duration() <= 0 or abs(native.currentTime() - .01) > .005:
+                    raise RuntimeError('Native macOS audio loading/seeking failed')
+                native.stop()
         print('PASS: real Demucs + Karaoke inference, seven stereo WAV exports, MP3 roundtrip')
         print('PASS: FLAC and MP4 video audio import, seekable preview preparation')
 

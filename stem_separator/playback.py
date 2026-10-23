@@ -92,3 +92,64 @@ class WindowsPlayer:
             finally:
                 self.path = None
                 self.duration = 0.0
+
+
+class MacPlayer:
+    """Native AVAudioPlayer transport with the same per-track seek semantics."""
+    def __init__(self, factory=None):
+        self._factory = factory or self._native_player
+        self._player = None
+        self.path = None
+        self.duration = 0.0
+
+    @staticmethod
+    def _native_player(path):
+        from AVFoundation import AVAudioPlayer
+        from Foundation import NSURL
+        player, error = AVAudioPlayer.alloc().initWithContentsOfURL_error_(
+            NSURL.fileURLWithPath_(str(path)), None)
+        if player is None:
+            raise RuntimeError(f'No se pudo abrir el audio: {error}')
+        player.prepareToPlay()
+        return player
+
+    def play(self, path: Path, seconds: float):
+        path = path.resolve()
+        if self.path != path:
+            self.close()
+            player = self._factory(path)
+            duration = float(player.duration())
+            clamp_position(0, duration)
+            self._player, self.path, self.duration = player, path, duration
+        self._player.pause()
+        position = clamp_position(seconds, self.duration)
+        self._player.setCurrentTime_(position)
+        if position < self.duration and not self._player.play():
+            raise RuntimeError('macOS no ha podido iniciar la reproducción de audio.')
+
+    def position(self):
+        return float(self._player.currentTime()) if self._player else 0.0
+
+    def playing(self):
+        return bool(self._player and self._player.isPlaying())
+
+    def stop(self):
+        if self._player:
+            self._player.pause()
+
+    def close(self):
+        if self._player:
+            self._player.stop()
+        self._player = None
+        self.path = None
+        self.duration = 0.0
+
+
+def playback_supported():
+    import sys
+    return sys.platform in {'win32', 'darwin'}
+
+
+def make_player():
+    import sys
+    return MacPlayer() if sys.platform == 'darwin' else WindowsPlayer()

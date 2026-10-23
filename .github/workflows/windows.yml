@@ -1,8 +1,7 @@
-name: Windows installer
+name: Desktop installers
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -55,3 +54,72 @@ jobs:
           name: StemSeparator-Windows-x64
           path: dist/installer/*
           if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Verify native architecture
+        run: test "$(uname -m)" = "${{ matrix.arch }}"
+      - name: Install native resampler
+        run: brew install libsamplerate
+      - name: Install Mac dependencies
+        run: python packaging/ci_run.py python -m pip install -r requirements.txt pytest==8.3.5 pyinstaller==6.12.0
+      - name: Prepare native library and check dependencies
+        run: |
+          python packaging/prepare_macos.py
+          python -m pip check
+      - name: Test audio and playback
+        run: python packaging/ci_run.py python -m pytest -q
+      - name: Smoke test real models
+        run: python tests/smoke_models.py
+      - name: Build Mac application and disk image
+        run: python packaging/ci_run.py bash packaging/build_macos.sh
+      - name: Test installed Mac application
+        run: python packaging/ci_run.py bash packaging/test_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StemSeparator-macOS-${{ matrix.arch }}
+          path: dist/installer/*
+          if-no-files-found: error
+
+  release:
+    name: Publish executables
+    needs: [build, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: StemSeparator-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish verified Windows and Mac packages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python -c 'from stem_separator import __version__; print(__version__)')
+          test -f "release-assets/StemSeparator-Setup-${version}-x64.exe"
+          test -f "release-assets/StemSeparator-${version}-macOS-arm64.dmg"
+          test -f "release-assets/StemSeparator-${version}-macOS-x86_64.dmg"
+          gh release create "v${version}" release-assets/* --target "$GITHUB_SHA" --title "Stem Separator ${version}" --notes-file packaging/release-notes.md

@@ -1,6 +1,8 @@
 """Native Windows-friendly Tk UI; inference runs outside Tk's main thread."""
 import logging
 import os
+import sys
+import subprocess
 from pathlib import Path
 import queue
 import threading
@@ -8,8 +10,8 @@ import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .engine import STEMS, Cancelled, Job, run
-from .playback import WindowsPlayer, clamp_position, format_time, prepare_audio
+from .engine import STEMS, Cancelled, Job, data_dir, run
+from .playback import make_player, playback_supported, clamp_position, format_time, prepare_audio
 
 
 class Application:
@@ -30,7 +32,7 @@ class Application:
         self.track_buttons = {}
         self.preview_loading = False
         self.preview_cancel = threading.Event()
-        self.player = WindowsPlayer()
+        self.player = make_player()
         self.active_track = None
         self.pending_preview = None
         self.preview_cache = {}
@@ -64,7 +66,7 @@ class Application:
         window = viewport.create_window((0, 0), window=panel, anchor="nw")
         panel.bind("<Configure>", lambda _: viewport.configure(scrollregion=viewport.bbox("all")))
         viewport.bind("<Configure>", lambda event: viewport.itemconfigure(window, width=event.width))
-        root.bind("<MouseWheel>", lambda event: viewport.yview_scroll(-int(event.delta / 120), "units"))
+        root.bind("<MouseWheel>", lambda event: viewport.yview_scroll(-int(event.delta if sys.platform == "darwin" else event.delta / 120), "units"))
         ttk.Label(panel, text="STEM SEPARATOR", font=("Segoe UI", 23, "bold")).pack(anchor="w")
         ttk.Label(panel, text="SEPARACIÓN LOCAL  /  7 STEMS  /  WAV + MP3", foreground="#a9afbc").pack(anchor="w", pady=(0, 18))
         for title, variable, command in [
@@ -234,14 +236,14 @@ class Application:
                     self.output = data
                     self.track_files = {key: next(iter(data.glob(key + ".*")), None) for key in STEMS}
                     for key, button in self.track_buttons.items():
-                        button.configure(state="normal" if self.track_files[key] and os.name == "nt" else "disabled")
+                        button.configure(state="normal" if self.track_files[key] and playback_supported() else "disabled")
                     threading.Thread(target=self.waveforms, daemon=True).start()
                     self.open_button.configure(state="normal")
                     self.status.set(f"Completado: {data}")
                 else:
                     self.status.set(data)
                     if kind == "error":
-                        messagebox.showerror("No se pudo completar", data + "\n\nConsulta el registro en %LOCALAPPDATA%\\StemSeparator\\app.log.")
+                        messagebox.showerror("No se pudo completar", data + f"\n\nConsulta el registro en {data_dir() / 'app.log'}.")
         except queue.Empty:
             pass
         self.update_playhead()
@@ -250,6 +252,8 @@ class Application:
     def open_result(self):
         if self.output and os.name == "nt":
             os.startfile(self.output)
+        elif self.output and sys.platform == "darwin":
+            subprocess.Popen(["open", str(self.output)])
 
     def draw_track(self, key):
         canvas, color = self.track_canvases[key]
@@ -330,7 +334,7 @@ class Application:
             self.status.set(f'Error de escucha: {error}')
 
     def preview(self, key):
-        if self.running or not self.track_files.get(key) or os.name != 'nt':
+        if self.running or not self.track_files.get(key) or not playback_supported():
             return
         if self.preview_loading:
             self.preview_cancel.set()
@@ -372,7 +376,7 @@ class Application:
         self.events.put(('waveforms', peaks))
 
     def credits(self):
-        messagebox.showinfo("Créditos y licencias", "Stem Separator 0.2.0 · jguillenconesa-coder\n\n"
+        messagebox.showinfo("Créditos y licencias", "Stem Separator 0.3.0 · jguillenconesa-coder\n\n"
             "Demucs / htdemucs_6s: Meta Research y colaboradores (MIT).\n"
             "audio-separator: Andrew Beveridge / Nomad Karaoke (MIT).\n"
             "UVR / Karaoke 2: Anjok07, TRvlvr y colaboradores UVR.\n"
@@ -391,7 +395,7 @@ class Application:
 
 
 def main():
-    directory = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".cache")) / "StemSeparator"
+    directory = data_dir()
     directory.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(filename=directory / "app.log", level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")

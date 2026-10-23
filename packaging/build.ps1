@@ -21,4 +21,4 @@ if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
 if (-not (Test-Path $iscc)) { throw 'Install Inno Setup 6 to generate the installer.' }
 & $iscc packaging/windows.iss
 Check-Exit
-Get-FileHash dist/installer/*.exe -Algorithm SHA256 | Format-List | Out-File dist/installer/SHA256.txt
+Get-FileHash dist/installer/*.exe -Algorithm SHA256 | Format-List | Out-File dist/installer/SHA256-Windows-x64.txt

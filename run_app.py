@@ -7,7 +7,8 @@ import traceback
 
 
 def bootstrap():
-    directory = Path(os.environ.get('LOCALAPPDATA', Path.home() / '.cache')) / 'StemSeparator'
+    from stem_separator.engine import data_dir
+    directory = data_dir()
     directory.mkdir(parents=True, exist_ok=True)
     # Windowed executables have no console. ML libraries still write progress.
     stream = None

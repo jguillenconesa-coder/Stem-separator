@@ -86,3 +86,40 @@ def test_failed_prepare_removes_partial_preview(tmp_path):
     with pytest.raises(RuntimeError):
         prepare_audio(source, destination)
     assert not destination.exists()
+
+
+class MacAudio:
+    def __init__(self):
+        self.time = 0.0
+        self.active = False
+        self.closed = False
+    def duration(self): return 10.0
+    def currentTime(self): return self.time
+    def setCurrentTime_(self, value): self.time = value
+    def play(self): self.active = True; return True
+    def pause(self): self.active = False
+    def isPlaying(self): return self.active
+    def stop(self): self.active = False; self.closed = True
+
+
+def test_mac_seek_pause_resume_and_switch_tracks(tmp_path):
+    from stem_separator.playback import MacPlayer
+    created = []
+    def factory(path):
+        audio = MacAudio()
+        created.append(audio)
+        return audio
+    player = MacPlayer(factory)
+    path = tmp_path / 'pista estéreo.wav'
+    player.play(path, 3.25)
+    assert player.playing() and player.position() == 3.25
+    player.stop()
+    assert not player.playing() and player.position() == 3.25
+    player.play(path, 8)
+    assert len(created) == 1 and player.position() == 8
+    player.play(path, 500)
+    assert player.position() == 10 and not player.playing()
+    player.play(tmp_path / 'other.wav', -2)
+    assert created[0].closed and player.position() == 0
+    player.close()
+    assert created[1].closed and player.path is None

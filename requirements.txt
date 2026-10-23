@@ -1,8 +1,12 @@
-audio-separator[cpu]==0.30.2
+audio-separator[cpu]==0.30.2; sys_platform != "darwin" or platform_machine != "x86_64"
+audio-separator[cpu]==0.24.1; sys_platform == "darwin" and platform_machine == "x86_64"
 numpy==1.26.4
-torch==2.5.1
-torchaudio==2.5.1
-torchvision==0.20.1
+torch==2.5.1; sys_platform != "darwin" or platform_machine != "x86_64"
+torch==2.2.2; sys_platform == "darwin" and platform_machine == "x86_64"
+torchaudio==2.5.1; sys_platform != "darwin" or platform_machine != "x86_64"
+torchaudio==2.2.2; sys_platform == "darwin" and platform_machine == "x86_64"
+torchvision==0.20.1; sys_platform != "darwin" or platform_machine != "x86_64"
+torchvision==0.17.2; sys_platform == "darwin" and platform_machine == "x86_64"
 soundfile==0.13.1
 imageio-ffmpeg==0.6.0
 # Compatible API versions for the 0.30.x separation engine.
@@ -11,3 +15,4 @@ onnx==1.17.0
 onnxruntime==1.20.1
 scipy==1.14.1
 numba==0.61.2
+pyobjc-framework-AVFoundation==11.0; sys_platform == "darwin"

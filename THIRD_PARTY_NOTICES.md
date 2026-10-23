@@ -35,3 +35,14 @@ redistribuido deben conservarse los avisos y cumplirse las obligaciones de fuent
 del build concreto. Fuentes e instrucciones del proveedor:
 https://github.com/imageio/imageio-ffmpeg y https://github.com/BtbN/FFmpeg-Builds.
 No se declara que el instalador completo tenga únicamente licencia MIT.
+
+
+## Integración macOS
+
+La reproducción utiliza AVFoundation y Foundation de Apple, mediante PyObjC
+(Ronald Oussoren y colaboradores, MIT; https://github.com/ronaldoussoren/pyobjc).
+Los frameworks del sistema no se redistribuyen. libsamplerate (Erik de Castro Lopo
+y colaboradores, BSD-2-Clause; https://github.com/libsndfile/libsamplerate) se
+obtiene de Homebrew para la arquitectura nativa. Sus avisos se conservan junto a
+los de las dependencias. Intel utiliza audio-separator 0.24.1 y PyTorch 2.2.2;
+Apple Silicon utiliza audio-separator 0.30.2 y PyTorch 2.5.1.
