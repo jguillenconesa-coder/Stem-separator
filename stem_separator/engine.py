@@ -98,6 +98,7 @@ def _make_separator(directory: Path):
     shutil.copy2(ffmpeg(), executable)
     previous_path = os.environ.get("PATH", "")
     os.environ["PATH"] = str(tools) + os.pathsep + previous_path
+    os.environ.setdefault("NUMBA_CACHE_DIR", str(data_dir() / "numba-cache"))
     try:
         from audio_separator.separator import Separator
         class FloatWavSeparator(Separator):
@@ -126,7 +127,7 @@ def _make_separator(directory: Path):
 
         return FloatWavSeparator(model_file_dir=str(cache_dir()), output_dir=str(directory),
                          output_format="WAV", use_soundfile=True,
-                         normalization_threshold=1.0, amplification_threshold=0.0,
+                         normalization_threshold=1.0, amplification_threshold=1e-12,
                          demucs_params={"segment_size": "Default", "shifts": 1,
                                         "overlap": 0.25, "segments_enabled": True})
     finally:
