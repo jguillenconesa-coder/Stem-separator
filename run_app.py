@@ -17,16 +17,25 @@ def bootstrap():
         sys.stdout = sys.stdout or stream
         sys.stderr = sys.stderr or stream
     if len(sys.argv) == 3 and sys.argv[1] == '--self-test':
+        import faulthandler
+        diagnostic = open(directory / 'self-test.log', 'w', encoding='utf-8', buffering=1)
+        faulthandler.dump_traceback_later(90, file=diagnostic)
         marker = Path(sys.argv[2])
         marker.unlink(missing_ok=True)
         try:
             from stem_separator.diagnostics import check_desktop, check_models
+            print('Starting desktop check', file=diagnostic, flush=True)
             check_desktop()
+            print('Starting real-model check', file=diagnostic, flush=True)
             check_models()
+            print('All checks passed', file=diagnostic, flush=True)
             marker.write_text(json.dumps({'desktop': 'passed', 'real_models': 'passed', 'mp3': 'passed'}), encoding='utf-8')
         except Exception:
             traceback.print_exc()
             raise SystemExit(1)
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+            diagnostic.close()
     else:
         from stem_separator.app import main
         main()

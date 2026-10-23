@@ -92,7 +92,7 @@ jobs:
       - name: Build Mac application and disk image
         run: python packaging/ci_run.py bash packaging/build_macos.sh
       - name: Test installed Mac application
-        run: python packaging/ci_run.py bash packaging/test_macos.sh
+        run: python packaging/ci_run.py python packaging/check_macos_install.py
       - uses: actions/upload-artifact@v4
         with:
           name: StemSeparator-macOS-${{ matrix.arch }}
