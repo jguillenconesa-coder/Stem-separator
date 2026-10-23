@@ -17,6 +17,7 @@ python -m PyInstaller --noconfirm --clean --onedir --windowed --name 'Stem Separ
   --add-data 'LICENSE:.' --add-data 'THIRD_PARTY_NOTICES.md:.' run_app.py
 app='dist/Stem Separator.app'
 python packaging/collect_licenses.py "$app/Contents/Resources/licenses"
+cp packaging/libsamplerate-LICENSE.txt "$app/Contents/Resources/licenses/libsamplerate-LICENSE.txt"
 python - "$app" "$version" <<'PY'
 from pathlib import Path
 import plistlib, sys
