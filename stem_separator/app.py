@@ -4,12 +4,12 @@ import os
 from pathlib import Path
 import queue
 import threading
-import subprocess
 import tempfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from .engine import STEMS, Cancelled, Job, ffmpeg, run
+from .engine import STEMS, Cancelled, Job, run
+from .playback import WindowsPlayer, clamp_position, format_time, prepare_audio
 
 
 class Application:
@@ -30,6 +30,13 @@ class Application:
         self.track_buttons = {}
         self.preview_loading = False
         self.preview_cancel = threading.Event()
+        self.player = WindowsPlayer()
+        self.active_track = None
+        self.pending_preview = None
+        self.preview_cache = {}
+        self.track_positions = {key: 0.0 for key in STEMS}
+        self.track_durations = {}
+        self.track_peaks = {}
         self.source = tk.StringVar()
         self.destination = tk.StringVar(value=str(Path.home() / "Music" / "Stem Separator"))
         self.format = tk.StringVar(value="wav")
@@ -61,7 +68,7 @@ class Application:
         ttk.Label(panel, text="STEM SEPARATOR", font=("Segoe UI", 23, "bold")).pack(anchor="w")
         ttk.Label(panel, text="SEPARACIÓN LOCAL  /  7 STEMS  /  WAV + MP3", foreground="#a9afbc").pack(anchor="w", pady=(0, 18))
         for title, variable, command in [
-            ("Audio de entrada · WAV / MP3", self.source, self.pick_source),
+            ("Entrada · WAV / MP3 / FLAC / vídeo MP4", self.source, self.pick_source),
             ("Carpeta de exportación", self.destination, self.pick_destination),
         ]:
             ttk.Label(panel, text=title).pack(anchor="w")
@@ -86,10 +93,17 @@ class Application:
                 self.vocal_check = check
             elif key == "backing_vocals":
                 self.backing_check = check
-            canvas = tk.Canvas(grid, height=39, background="#2c2e35", highlightthickness=0)
+            canvas = tk.Canvas(grid, height=56, background="#2c2e35", highlightthickness=0, cursor="hand2", takefocus=True)
             canvas.grid(row=i, column=2, sticky="ew", pady=3)
             canvas.create_text(12, 19, anchor="w", text="Sin audio generado", fill="#858b99")
             self.track_canvases[key] = (canvas, color)
+            canvas.bind('<Configure>', lambda _, stem=key: self.draw_track(stem))
+            canvas.bind('<Button-1>', lambda event, stem=key: self.seek_track(stem, event.x, start=True))
+            canvas.bind('<B1-Motion>', lambda event, stem=key: self.seek_track(stem, event.x))
+            canvas.bind('<ButtonRelease-1>', lambda _, stem=key: self.preview(stem))
+            canvas.bind('<Left>', lambda _, stem=key: self.nudge_track(stem, -5))
+            canvas.bind('<Right>', lambda _, stem=key: self.nudge_track(stem, 5))
+            canvas.bind('<space>', lambda _, stem=key: self.preview(stem))
             button = ttk.Button(grid, text="▶ Escuchar", command=lambda stem=key: self.preview(stem), state="disabled")
             button.grid(row=i, column=3, padx=(10, 0))
             self.track_buttons[key] = button
@@ -122,7 +136,7 @@ class Application:
         root.after(100, self.poll)
 
     def pick_source(self):
-        path = filedialog.askopenfilename(filetypes=[("Audio", "*.wav *.mp3"), ("WAV", "*.wav"), ("MP3", "*.mp3")])
+        path = filedialog.askopenfilename(filetypes=[("Audio y vídeo", "*.wav *.mp3 *.flac *.mp4"), ("WAV", "*.wav"), ("MP3", "*.mp3"), ("FLAC", "*.flac"), ("Vídeo MP4", "*.mp4")])
         if path:
             self.source.set(path)
 
@@ -150,6 +164,12 @@ class Application:
             return
         self.cancel.clear()
         self.running = True
+        self.player.close()
+        self.active_track = None
+        self.preview_cache.clear()
+        self.track_durations.clear()
+        self.track_peaks.clear()
+        self.track_positions = {key: 0.0 for key in STEMS}
         for canvas, _ in self.track_canvases.values():
             canvas.delete("all")
             canvas.create_text(12, 19, anchor="w", text="En espera de resultados", fill="#858b99")
@@ -178,20 +198,27 @@ class Application:
         try:
             while True:
                 kind, data = self.events.get_nowait()
-                if kind == "preview":
+                if kind == "preview_ready":
+                    key, path, error = data
                     self.preview_loading = False
                     self.start.configure(state="normal")
-                    if data:
-                        self.status.set(data)
+                    if path:
+                        self.preview_cache[key] = path
+                    pending = self.pending_preview
+                    self.pending_preview = None
+                    if pending:
+                        self.preview(pending)
+                    elif not self.preview_cancel.is_set():
+                        if error:
+                            self.status.set(f"Error de escucha: {error}")
+                        else:
+                            self.start_playback(key, path)
                     continue
                 if kind == "waveforms":
-                    for key, peaks in data.items():
-                        canvas, color = self.track_canvases[key]
-                        canvas.delete("all")
-                        width = max(canvas.winfo_width(), 50)
-                        for index, peak in enumerate(peaks):
-                            x = index * width / len(peaks)
-                            canvas.create_line(x, 20 - peak * 17, x, 20 + peak * 17, fill=color)
+                    for key, (peaks, duration) in data.items():
+                        self.track_peaks[key] = peaks
+                        self.track_durations[key] = duration
+                        self.draw_track(key)
                     continue
                 if kind == "status":
                     if not self.cancel.is_set():
@@ -217,43 +244,115 @@ class Application:
                         messagebox.showerror("No se pudo completar", data + "\n\nConsulta el registro en %LOCALAPPDATA%\\StemSeparator\\app.log.")
         except queue.Empty:
             pass
+        self.update_playhead()
         self.root.after(100, self.poll)
 
     def open_result(self):
         if self.output and os.name == "nt":
             os.startfile(self.output)
 
+    def draw_track(self, key):
+        canvas, color = self.track_canvases[key]
+        canvas.delete('all')
+        width = max(canvas.winfo_width(), 1)
+        peaks = self.track_peaks.get(key)
+        if peaks is None:
+            canvas.create_text(12, 19, anchor='w', text='En espera de audio', fill='#858b99')
+            return
+        for index, peak in enumerate(peaks):
+            x = index * width / max(len(peaks), 1)
+            canvas.create_line(x, 19 - peak * 16, x, 19 + peak * 16, fill=color)
+        self.draw_cursor(key)
+
+    def draw_cursor(self, key):
+        canvas, _ = self.track_canvases[key]
+        canvas.delete('playhead')
+        duration = self.track_durations.get(key, 0)
+        if duration <= 0:
+            return
+        position = clamp_position(self.track_positions[key], duration)
+        width = max(canvas.winfo_width() - 1, 1)
+        x = width * position / duration
+        canvas.create_line(x, 0, x, 38, fill='#ffffff', width=2, tags='playhead')
+        canvas.create_polygon(x - 4, 0, x + 4, 0, x, 6, fill='#ffffff', tags='playhead')
+        canvas.create_text(6, 47, anchor='w', text=f'{format_time(position)} / {format_time(duration)}',
+                           fill='#c7ccd7', tags='playhead')
+
+    def seek_track(self, key, x, start=False):
+        if self.running or key not in self.track_durations:
+            return
+        if start:
+            self.stop_preview()
+            self.track_canvases[key][0].focus_set()
+        width = max(self.track_canvases[key][0].winfo_width() - 1, 1)
+        self.track_positions[key] = clamp_position(x / width * self.track_durations[key], self.track_durations[key])
+        self.draw_cursor(key)
+
+    def nudge_track(self, key, seconds):
+        if self.running or key not in self.track_durations:
+            return 'break'
+        self.stop_preview()
+        self.track_positions[key] = clamp_position(self.track_positions[key] + seconds, self.track_durations[key])
+        self.draw_cursor(key)
+        self.preview(key)
+        return 'break'
+
+    def update_playhead(self):
+        if self.active_track is None:
+            return
+        key = self.active_track
+        try:
+            self.track_positions[key] = clamp_position(self.player.position(), self.track_durations.get(key, self.player.duration))
+            self.draw_cursor(key)
+            if not self.player.playing():
+                self.active_track = None
+        except Exception as error:
+            self.active_track = None
+            self.status.set(f'Error de reproducción: {error}')
+
     def stop_preview(self):
         self.preview_cancel.set()
-        if os.name == "nt":
-            import winsound
-            winsound.PlaySound(None, 0)
+        self.pending_preview = None
+        if self.active_track is not None:
+            self.update_playhead()
+        self.active_track = None
+        try:
+            self.player.stop()
+        except Exception:
+            logging.exception('Could not stop playback')
+
+    def start_playback(self, key, path):
+        try:
+            self.player.play(path, self.track_positions[key])
+            self.active_track = key
+            self.status.set(f'Escuchando: {STEMS[key]} · haz clic o arrastra el cursor para cambiar de posición.')
+        except Exception as error:
+            self.status.set(f'Error de escucha: {error}')
 
     def preview(self, key):
-        if self.preview_loading or self.running or not self.track_files.get(key):
+        if self.running or not self.track_files.get(key) or os.name != 'nt':
+            return
+        if self.preview_loading:
+            self.preview_cancel.set()
+            self.pending_preview = key
             return
         self.stop_preview()
         self.preview_cancel.clear()
+        if key in self.preview_cache:
+            self.start_playback(key, self.preview_cache[key])
+            return
         self.preview_loading = True
-        self.start.configure(state="disabled")
-        self.status.set(f"Preparando escucha: {STEMS[key]}…")
-        def play():
+        self.start.configure(state='disabled')
+        self.status.set(f'Preparando escucha: {STEMS[key]}…')
+        source = self.track_files[key]
+        target = Path(self.preview_directory.name) / f'{key}.wav'
+        def prepare():
             try:
-                import winsound
-                target = Path(self.preview_directory.name) / 'listen.wav'
-                result = subprocess.run([ffmpeg(), '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-                    '-i', str(self.track_files[key]), '-c:a', 'pcm_s16le', str(target)], capture_output=True,
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-                if result.returncode:
-                    raise RuntimeError('No se pudo preparar la escucha.')
-                if self.preview_cancel.is_set():
-                    self.events.put(('preview', 'Escucha detenida.'))
-                    return
-                winsound.PlaySound(str(target), winsound.SND_FILENAME | winsound.SND_ASYNC)
-                self.events.put(('preview', f"Escuchando: {STEMS[key]}"))
+                prepare_audio(source, target)
+                self.events.put(('preview_ready', (key, target, None)))
             except Exception as error:
-                self.events.put(('preview', f"Error de escucha: {error}"))
-        threading.Thread(target=play, daemon=True).start()
+                self.events.put(('preview_ready', (key, None, str(error))))
+        threading.Thread(target=prepare, daemon=True).start()
 
     def waveforms(self):
         import numpy as np
@@ -265,14 +364,15 @@ class Application:
                     with sf.SoundFile(path) as audio:
                         blocksize = max(1, (len(audio) + 399) // 400)
                         values = [float(np.max(np.abs(block))) for block in audio.blocks(blocksize=blocksize)]
+                        duration = len(audio) / audio.samplerate
                         maximum = max(values, default=0) or 1
-                        peaks[key] = [value / maximum for value in values]
+                        peaks[key] = ([value / maximum for value in values], duration)
                 except Exception:
                     logging.exception('Waveform unavailable for %s', key)
         self.events.put(('waveforms', peaks))
 
     def credits(self):
-        messagebox.showinfo("Créditos y licencias", "Stem Separator 0.1.0 · jguillenconesa-coder\n\n"
+        messagebox.showinfo("Créditos y licencias", "Stem Separator 0.2.0 · jguillenconesa-coder\n\n"
             "Demucs / htdemucs_6s: Meta Research y colaboradores (MIT).\n"
             "audio-separator: Andrew Beveridge / Nomad Karaoke (MIT).\n"
             "UVR / Karaoke 2: Anjok07, TRvlvr y colaboradores UVR.\n"
@@ -285,6 +385,7 @@ class Application:
             messagebox.showinfo("Separación en curso", "Pulsa Cancelar y espera a que termine la etapa actual antes de cerrar.")
             return
         self.stop_preview()
+        self.player.close()
         self.preview_directory.cleanup()
         self.root.destroy()
 

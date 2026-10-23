@@ -35,8 +35,8 @@ class Job:
     split_vocals: bool = True
 
     def validate(self):
-        if not self.source.is_file() or self.source.suffix.lower() not in {".wav", ".mp3"}:
-            raise ValueError("Selecciona un archivo WAV o MP3 existente.")
+        if not self.source.is_file() or self.source.suffix.lower() not in {".wav", ".mp3", ".flac", ".mp4"}:
+            raise ValueError("Selecciona un archivo WAV, MP3, FLAC o MP4 existente.")
         if not self.stems or len(set(self.stems)) != len(self.stems) or set(self.stems) - STEMS.keys():
             raise ValueError("Selecciona al menos un stem válido, sin duplicados.")
         if self.format not in {"wav", "mp3"}:
@@ -70,13 +70,15 @@ def _write_float_wav(path: Path, samples, rate: int):
 
 def convert(source: Path, target: Path, *, stereo=False):
     args = [ffmpeg(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source)]
+    # Select the first audio stream explicitly; MP4 video is never passed to the model.
+    args += ["-map", "0:a:0", "-vn"]
     if stereo:
         args += ["-ac", "2", "-ar", "44100"]
     args += ["-c:a", "libmp3lame", "-b:a", "320k"] if target.suffix == ".mp3" else ["-c:a", "pcm_s24le"]
     result = subprocess.run(args + [str(target)], capture_output=True, text=True,
                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if result.returncode:
-        raise RuntimeError("FFmpeg no pudo convertir el audio: " + result.stderr[-2000:])
+        raise RuntimeError("FFmpeg no pudo leer el audio. Si es un vídeo MP4, debe contener una pista de audio. " + result.stderr[-2000:])
 
 
 def _make_separator(directory: Path):
@@ -164,7 +166,7 @@ def run(job: Job, status: Callable[[str], None] = print,
             status(f"Exportando {STEMS[key]}…")
             convert(paths[key], result / f"{key}.{job.format}")
         (result / "separation.json").write_text(json.dumps({
-            "app_version": "0.1.0", "input": job.source.name,
+            "app_version": "0.2.0", "input": job.source.name,
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "stems": job.stems, "format": job.format,
             "model": MODEL, "vocal_model": VOCAL_MODEL if job.split_vocals and

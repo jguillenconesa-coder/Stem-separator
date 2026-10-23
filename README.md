@@ -1,6 +1,7 @@
 # Stem Separator para Windows
 
-Aplicación de escritorio en español para importar una mezcla **WAV o MP3** y
+Aplicación de escritorio en español para importar una mezcla **WAV, MP3 o FLAC**,
+o el audio de un **vídeo MP4**, y
 exportar los stems seleccionados como **WAV PCM de 24 bits** o **MP3 de 320 kbps**.
 Salida estéreo, 44,1 kHz. Procesamiento local: el audio no se sube a ningún servicio.
 
@@ -12,12 +13,14 @@ Salida estéreo, 44,1 kHz. Procesamiento local: el audio no se sube a ningún se
 - Vista oscura con una fila de color por instrumento, formas de onda reales y
   escucha individual de los resultados en Windows. Inspiración visual en estaciones
   de audio como Logic Pro, sin usar su código, recursos ni modelos propietarios.
+- Cursor de reproducción independiente por pista: clic o arrastre sobre la onda
+  para escuchar desde ese instante, con indicador de tiempo y avance durante la escucha.
 
 ## Instalación en Windows 10/11 x64
 
 En GitHub, abre **Actions → Windows installer → ejecución correcta → Artifacts**.
 Descarga `StemSeparator-Windows-x64`, descomprime el ZIP y ejecuta
-`StemSeparator-Setup-0.1.0-x64.exe`. El archivo SHA256 permite comprobar la descarga.
+`StemSeparator-Setup-0.2.0-x64.exe`. El archivo SHA256 permite comprobar la descarga.
 El instalador no está firmado digitalmente. No requiere Python instalado.
 El artefacto solo existe después de una compilación correcta; el código fuente no
 constituye un instalador generado.
@@ -28,13 +31,19 @@ necesita Internet para descargar pesos y metadatos; puede tardar. Las siguientes
 reutilizan la caché. No se garantiza funcionamiento sin red: audio-separator puede
 consultar metadatos de sus modelos incluso con los pesos presentes.
 
-1. Elige un WAV o MP3 y la carpeta de salida.
+1. Elige un WAV, MP3, FLAC o vídeo MP4 y la carpeta de salida. En MP4 se usa la
+   primera pista de audio; un vídeo sin audio muestra un error explicativo.
 2. Marca los stems deseados y el formato.
 3. Mantén «Distinguir voz principal y coros» para separarlos, o desactívalo y
    desmarca Coros para obtener todas las voces juntas en `vocals`.
 4. Pulsa **Separar y exportar**. La cancelación espera a que acabe la etapa actual.
 5. Escucha una pista con **▶ Escuchar**, detén la reproducción con **■ Detener**,
    o abre los resultados. Cada ejecución incluye `separation.json`.
+6. Haz clic o arrastra el cursor sobre la forma de onda para saltar a otro momento.
+   Las flechas izquierda/derecha desplazan 5 segundos cuando la onda tiene el foco;
+   Espacio reproduce desde el cursor. Detener conserva la posición de cada pista.
+   Se escucha una pista a la vez. La primera escucha prepara un WAV temporal;
+   los siguientes saltos usan el reproductor nativo de Windows, sin volver a convertir.
 
 ## Modelos y límites
 

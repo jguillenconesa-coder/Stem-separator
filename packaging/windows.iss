@@ -1,4 +1,4 @@
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 [Setup]
 AppId={{79A4F012-A35C-4EC3-B769-ABF1F1BCC132}
 AppName=Stem Separator
