@@ -55,6 +55,19 @@ def ffmpeg() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
 
 
+def _write_float_wav(path: Path, samples, rate: int):
+    """Preserve stereo layout and floating-point precision between model stages."""
+    import numpy as np
+    import soundfile as sf
+    samples = np.asarray(samples, dtype=np.float32)
+    if samples.ndim != 2 or samples.shape[1] != 2 or not np.isfinite(samples).all():
+        raise RuntimeError("El modelo ha devuelto audio estéreo inválido.")
+    peak = float(np.max(np.abs(samples))) if samples.size else 0
+    if peak > 1:
+        samples = samples / peak
+    sf.write(path, samples, rate, subtype="FLOAT")
+
+
 def convert(source: Path, target: Path, *, stereo=False):
     args = [ffmpeg(), "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source)]
     if stereo:
@@ -77,7 +90,17 @@ def _make_separator(directory: Path):
     os.environ["PATH"] = str(tools) + os.pathsep + previous_path
     try:
         from audio_separator.separator import Separator
-        return Separator(model_file_dir=str(cache_dir()), output_dir=str(directory),
+        class FloatWavSeparator(Separator):
+            def load_model(self, *args, **kwargs):
+                result = super().load_model(*args, **kwargs)
+                # The 0.30.x SoundFile writer flattens C-contiguous stereo arrays
+                # and casts normalized floats to integers. Use our lossless WAV
+                # adapter rather than modifying the installed library.
+                self.model_instance.write_audio = lambda path, samples: _write_float_wav(
+                    Path(path), samples, self.sample_rate)
+                return result
+
+        return FloatWavSeparator(model_file_dir=str(cache_dir()), output_dir=str(directory),
                          output_format="WAV", use_soundfile=True,
                          normalization_threshold=1.0, amplification_threshold=0.0,
                          demucs_params={"segment_size": "Default", "shifts": 1,

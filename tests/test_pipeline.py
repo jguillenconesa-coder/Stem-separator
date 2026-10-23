@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from stem_separator.engine import Cancelled, Job, convert, run
+from stem_separator.engine import Cancelled, Job, convert, run, _write_float_wav
 
 
 @pytest.fixture
@@ -96,3 +96,19 @@ def test_corrupt_audio_fails_without_results(tmp_path):
     with pytest.raises(RuntimeError, match='FFmpeg'):
         run(Job(audio, output, ('drums',)), factory=FakeSeparator)
     assert not list(output.iterdir())
+
+
+@pytest.mark.parametrize('order', ['C', 'F'])
+def test_model_writer_preserves_stereo_precision_and_silence(tmp_path, order):
+    samples = np.array([[0.00123456, -0.00345678], [0, 0]], dtype=np.float32, order=order)
+    target = tmp_path / 'intermediate.wav'
+    _write_float_wav(target, samples, 44100)
+    result, rate = sf.read(target, dtype='float32')
+    assert rate == 44100 and result.shape == (2, 2)
+    np.testing.assert_array_equal(result, samples)
+    assert sf.info(target).subtype == 'FLOAT'
+
+
+def test_model_writer_rejects_invalid_audio(tmp_path):
+    with pytest.raises(RuntimeError, match='inválido'):
+        _write_float_wav(tmp_path / 'bad.wav', np.array([[np.nan, 0]]), 44100)
