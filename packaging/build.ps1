@@ -7,6 +7,7 @@ python -m PyInstaller --noconfirm --clean --onedir --windowed --name StemSeparat
   --collect-all audio_separator --collect-all imageio_ffmpeg --collect-all onnxruntime `
   --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all torchvision `
   --collect-all onnx2torch --collect-all scipy --collect-all sklearn `
+  --collect-all samplerate --collect-all soxr `
   --recursive-copy-metadata audio-separator --copy-metadata tqdm --copy-metadata rotary-embedding-torch `
   --add-data "${uvr};audio_separator/separator/uvr_lib_v5" `
   --add-data 'LICENSE;.' --add-data 'THIRD_PARTY_NOTICES.md;.' run_app.py

@@ -29,6 +29,7 @@ class Application:
         self.track_canvases = {}
         self.track_buttons = {}
         self.preview_loading = False
+        self.preview_cancel = threading.Event()
         self.source = tk.StringVar()
         self.destination = tk.StringVar(value=str(Path.home() / "Music" / "Stem Separator"))
         self.format = tk.StringVar(value="wav")
@@ -81,6 +82,10 @@ class Application:
             check = ttk.Checkbutton(grid, text=label, variable=self.selected[key], width=23)
             check.grid(row=i, column=1, sticky="w", padx=(0, 12), pady=3)
             self.controls.append(check)
+            if key == "vocals":
+                self.vocal_check = check
+            elif key == "backing_vocals":
+                self.backing_check = check
             canvas = tk.Canvas(grid, height=39, background="#2c2e35", highlightthickness=0)
             canvas.grid(row=i, column=2, sticky="ew", pady=3)
             canvas.create_text(12, 19, anchor="w", text="Sin audio generado", fill="#858b99")
@@ -88,7 +93,7 @@ class Application:
             button = ttk.Button(grid, text="▶ Escuchar", command=lambda stem=key: self.preview(stem), state="disabled")
             button.grid(row=i, column=3, padx=(10, 0))
             self.track_buttons[key] = button
-        split = ttk.Checkbutton(panel, text="Distinguir voz principal y coros (segunda etapa experimental)", variable=self.split)
+        split = ttk.Checkbutton(panel, text="Distinguir voz principal y coros (segunda etapa experimental)", variable=self.split, command=self.update_voice_mode)
         split.pack(anchor="w", pady=(12, 4))
         self.controls.append(split)
         ttk.Label(panel, text="Desactívalo para exportar todas las voces juntas en vocals.\nLos coros pueden contener voz principal residual y reverberación.").pack(anchor="w")
@@ -120,6 +125,12 @@ class Application:
         path = filedialog.askopenfilename(filetypes=[("Audio", "*.wav *.mp3"), ("WAV", "*.wav"), ("MP3", "*.mp3")])
         if path:
             self.source.set(path)
+
+    def update_voice_mode(self):
+        self.vocal_check.configure(text="Voz principal" if self.split.get() else "Voces (todas)")
+        self.backing_check.configure(state="normal" if self.split.get() else "disabled")
+        if not self.split.get():
+            self.selected["backing_vocals"].set(False)
 
     def pick_destination(self):
         path = filedialog.askdirectory()
@@ -190,6 +201,7 @@ class Application:
                 self.progress.stop()
                 for control in self.controls + [self.start]:
                     control.configure(state="normal")
+                self.update_voice_mode()
                 self.stop.configure(state="disabled")
                 if kind == "done":
                     self.output = data
@@ -212,6 +224,7 @@ class Application:
             os.startfile(self.output)
 
     def stop_preview(self):
+        self.preview_cancel.set()
         if os.name == "nt":
             import winsound
             winsound.PlaySound(None, 0)
@@ -220,6 +233,7 @@ class Application:
         if self.preview_loading or self.running or not self.track_files.get(key):
             return
         self.stop_preview()
+        self.preview_cancel.clear()
         self.preview_loading = True
         self.start.configure(state="disabled")
         self.status.set(f"Preparando escucha: {STEMS[key]}…")
@@ -232,6 +246,9 @@ class Application:
                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                 if result.returncode:
                     raise RuntimeError('No se pudo preparar la escucha.')
+                if self.preview_cancel.is_set():
+                    self.events.put(('preview', 'Escucha detenida.'))
+                    return
                 winsound.PlaySound(str(target), winsound.SND_FILENAME | winsound.SND_ASYNC)
                 self.events.put(('preview', f"Escuchando: {STEMS[key]}"))
             except Exception as error:
