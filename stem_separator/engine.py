@@ -90,7 +90,11 @@ def _separate(directory: Path, source: Path, model: str, names: dict[str, str], 
     directory.mkdir(parents=True)
     separator = factory(directory)
     separator.load_model(model_filename=model)
-    separator.separate(str(source), custom_output_names=names)
+    # In audio-separator 0.30.x the SoundFile writer ignores output_dir.
+    # Absolute custom names keep every intermediate inside this job's workspace.
+    separator.separate(str(source), custom_output_names={
+        stem: str((directory / name).resolve()) for stem, name in names.items()
+    })
     del separator
     gc.collect()
     paths = {name: directory / (name + ".wav") for name in names.values()}
