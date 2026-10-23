@@ -1,0 +1,13 @@
+audio-separator[cpu]==0.30.2
+numpy==1.26.4
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
+soundfile==0.13.1
+imageio-ffmpeg==0.6.0
+# Compatible API versions for the 0.30.x separation engine.
+librosa==0.10.2.post1
+onnx==1.17.0
+onnxruntime==1.20.1
+scipy==1.14.1
+numba==0.61.2
