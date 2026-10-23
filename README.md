@@ -9,6 +9,9 @@ Salida estéreo, 44,1 kHz. Procesamiento local: el audio no se sube a ningún se
 - Carpetas numeradas para no sobrescribir separaciones anteriores.
 - Cancelación entre etapas, registro de errores y manifiesto de cada separación.
 - Interfaz nativa Tk; instalador por usuario, sin permisos de administrador.
+- Vista oscura con una fila de color por instrumento, formas de onda reales y
+  escucha individual de los resultados en Windows. Inspiración visual en estaciones
+  de audio como Logic Pro, sin usar su código, recursos ni modelos propietarios.
 
 ## Instalación en Windows 10/11 x64
 
@@ -30,7 +33,8 @@ consultar metadatos de sus modelos incluso con los pesos presentes.
 3. Mantén «Distinguir voz principal y coros» para separarlos, o desactívalo y
    desmarca Coros para obtener todas las voces juntas en `vocals`.
 4. Pulsa **Separar y exportar**. La cancelación espera a que acabe la etapa actual.
-5. Abre los resultados. Cada ejecución incluye `separation.json`.
+5. Escucha una pista con **▶ Escuchar**, detén la reproducción con **■ Detener**,
+   o abre los resultados. Cada ejecución incluye `separation.json`.
 
 ## Modelos y límites
 
@@ -77,8 +81,9 @@ python -m pip install pyinstaller==6.12.0
 ./packaging/build.ps1
 ```
 
-GitHub Actions ejecuta pruebas y la inferencia real antes de empaquetar. Genera
-un instalador x64 y su SHA256. La publicación de una release y la firma digital
+GitHub Actions ejecuta pruebas y la inferencia real antes de empaquetar. Después
+instala el ejecutable y comprueba la interfaz y la inferencia desde el paquete
+instalado. Genera un instalador x64 y su SHA256. La publicación de una release y la firma digital
 no están automatizadas. Las dependencias directas están fijadas; las transitivas
 se resuelven al instalar, por lo que no es un build reproducible bit a bit.
 

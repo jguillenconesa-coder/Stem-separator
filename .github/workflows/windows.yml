@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-2022
@@ -31,6 +34,22 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: ./packaging/build.ps1
+      - name: Install and test the packaged application
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP 'StemSeparator-installed'
+          $installer = Get-Item dist/installer/*.exe
+          $process = Start-Process $installer.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$target`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          $marker = Join-Path $env:RUNNER_TEMP 'installed-check.json'
+          $process = Start-Process (Join-Path $target 'StemSeparator.exe') -ArgumentList '--self-test', "`"$marker`"" -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $marker)) {
+            Get-Content "$env:LOCALAPPDATA/StemSeparator/runtime.log" -ErrorAction SilentlyContinue
+            throw 'Installed application did not pass its real-model and desktop checks.'
+          }
+          Get-Content $marker
+        env:
+          OMP_NUM_THREADS: '2'
       - uses: actions/upload-artifact@v4
         with:
           name: StemSeparator-Windows-x64

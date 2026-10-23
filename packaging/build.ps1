@@ -1,11 +1,14 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 function Check-Exit { if ($LASTEXITCODE -ne 0) { throw "Command failed: $LASTEXITCODE" } }
+$uvr = python -c "import audio_separator, pathlib; print(pathlib.Path(audio_separator.__file__).parent / 'separator' / 'uvr_lib_v5')"
+Check-Exit
 python -m PyInstaller --noconfirm --clean --onedir --windowed --name StemSeparator `
   --collect-all audio_separator --collect-all imageio_ffmpeg --collect-all onnxruntime `
   --collect-all librosa --collect-all torch --collect-all torchaudio --collect-all torchvision `
   --collect-all onnx2torch --collect-all scipy --collect-all sklearn `
-  --copy-metadata audio-separator --copy-metadata tqdm --copy-metadata rotary-embedding-torch `
+  --recursive-copy-metadata audio-separator --copy-metadata tqdm --copy-metadata rotary-embedding-torch `
+  --add-data "${uvr};audio_separator/separator/uvr_lib_v5" `
   --add-data 'LICENSE;.' --add-data 'THIRD_PARTY_NOTICES.md;.' run_app.py
 Check-Exit
 $licenses = 'dist/StemSeparator/licenses'
